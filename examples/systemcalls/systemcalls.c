@@ -16,8 +16,9 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    int retVal = system(cmd);
 
-    return true;
+    return retVal == 0 ? true : false;
 }
 
 /**
@@ -47,7 +48,7 @@ bool do_exec(int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    // command[count] = command[count];
 
 /*
  * TODO:
@@ -58,10 +59,39 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    pid_t prcId = fork();
+    bool retVal;
+    int prcRetVal;
+
+    if( prcId == -1 )
+    {
+        retVal = false;
+        perror("fork");
+    } else if( prcId == 0 ) {
+        execv(command[0], command);
+        perror("execv");
+        exit(EXIT_FAILURE);
+    } else {
+        prcId = wait(&prcRetVal);
+        if (prcId < 1)
+        {
+            retVal = false;
+        }
+        else
+        {
+            if(WIFEXITED(prcRetVal))
+            {
+                retVal = WEXITSTATUS(prcRetVal) == 0 ? true : false;
+            }
+            else
+            {
+                retVal = false;
+            }
+        }
+    }
 
     va_end(args);
-
-    return true;
+    return retVal;
 }
 
 /**
@@ -82,7 +112,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    // command[count] = command[count];
 
 
 /*
@@ -92,8 +122,50 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    pid_t prcId = fork();
+    bool retVal;
+    int prcRetVal;
+
+    if( prcId == -1 )
+    {
+        retVal = false;
+        perror("fork");
+    } else if( prcId == 0 ) {
+        if (dup2(fd, 1) < 0) 
+        {
+            retVal = false;
+            perror("dup2");
+            close(fd);
+
+        }
+        else
+        {
+            close(fd);
+            execv(command[0], command);
+            perror("execv");
+        }        
+        exit(EXIT_FAILURE);
+    } else {
+        close(fd);
+        prcId = wait(&prcRetVal);
+        if (prcId < 1)
+        {
+            retVal = false;
+        }
+        else
+        {
+            if(WIFEXITED(prcRetVal))
+            {
+                retVal = WEXITSTATUS(prcRetVal) == 0 ? true : false;
+            }
+            else
+            {
+                retVal = false;
+            }
+        }
+    }
 
     va_end(args);
-
-    return true;
+    return retVal;
 }
