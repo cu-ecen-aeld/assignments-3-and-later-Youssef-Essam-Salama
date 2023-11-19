@@ -25,4 +25,4 @@ $(OBJ_FILES): $(SRC_FILES) $(INC_FILES)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm $(EXECUTABLE) $(OBJ_FILES)
+	rm -rf $(EXECUTABLE) $(OBJ_FILES)
