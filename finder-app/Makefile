@@ -1,4 +1,4 @@
-CC = $(CROSS-COMPILE)gcc
+CC = $(CROSS_COMPILE)gcc
 
 CFLAGS = -Wall -g -I $(INC_DIR)
 LFLAGS = 
