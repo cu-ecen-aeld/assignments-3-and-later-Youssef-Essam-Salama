@@ -10,6 +10,7 @@
    ################# Include libraries ######################## 
    ############################################################ 
 */
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <signal.h>
+#include <arpa/inet.h>
 
 /* 
    ############################################################
@@ -31,9 +33,8 @@
 #define TRUE                (1U)
 #define SOCKET_PORT         "9000"
 #define SOCKET_BACKLOG      (10U)
-#define SOCKET_BUFFER_SIZE  (1500U)
-#define INITIAL_PACKET_SIZE (4096U)
-#define MAX_PACKET_SIZE     (65536U)
+#define SOCKET_BUFFER_SIZE  (1024U)
+#define MAX_PACKET_SIZE     (32762U)
 #define LOG_FILE_NAME       "/var/tmp/aesdsocketdata"
 
 /* 
@@ -45,12 +46,14 @@ static FILE *logFile = NULL;
 static int sockfd = -1;
 static int accepted_sockfd = -1;
 static volatile sig_atomic_t thread_running = TRUE;
+static uint8_t run_as_daemon = FALSE;
 
 /* 
    ############################################################
    ############## Local functions declarations ################
    ############################################################ 
 */
+static void handle_input_parameters(int argc, char *argv[]);
 static void garbage_collection(void);
 static void sigIntTermHandler(int signum);
 static void setup_signal_handlers(void);
@@ -59,12 +62,40 @@ static void setup_log_file(void);
 static void send_file(char *buffer, uint32_t buffer_size);
 static void handle_recv_send(void);
 static void handle_client_connection(void);
+static void run_server(void);
 
 /* 
    ############################################################
    ################# Local functions definitions ##############
    ############################################################ 
 */
+static void handle_input_parameters(int argc, char *argv[])
+{
+
+    if (argc > 2)
+    {
+        syslog(LOG_ERR, "Number of parameters specified greater than needed\n");
+        exit(EXIT_FAILURE);
+    }
+    else if (argc == 2)
+    {
+        if (strcmp(argv[1], "-d") == 0)
+        {
+            run_as_daemon = TRUE;
+            syslog(LOG_INFO, "Running as daemon\n");
+        }
+        else
+        {
+            syslog(LOG_ERR, "Invalid input parameter: %s\n", argv[1]);
+            exit(EXIT_FAILURE);
+        }
+    }
+    else
+    {
+        /* Do nothing */
+    }
+}
+
 static void garbage_collection(void)
 {
     if (sockfd != -1)
@@ -119,21 +150,20 @@ static void setup_signal_handlers(void)
 
 static void setup_socket(void)
 {
+    int ret_val;
     int socket_reuse_option = 1;
     struct addrinfo *addrinfo;
     struct addrinfo hints;
 
+    memset(&hints, 0, sizeof(hints));
     hints.ai_flags = AI_PASSIVE;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = 0;
-    hints.ai_canonname = NULL;
-    hints.ai_addr = NULL;
-    hints.ai_next = NULL;
 
-    if (0 != getaddrinfo(NULL, SOCKET_PORT, &hints, &addrinfo))
+    ret_val = getaddrinfo(NULL, SOCKET_PORT, &hints, &addrinfo);
+    if (ret_val != 0)
     {
-        syslog(LOG_ERR, "Error getting address info: %s\n", gai_strerror(errno));
+        syslog(LOG_ERR, "Error getting address info: %s\n", gai_strerror(ret_val));
         exit(EXIT_FAILURE);
     }
 
@@ -212,10 +242,10 @@ static void handle_recv_send(void)
     char *packet;
     char *buffer;
     int bytes_received = 0;
-    uint32_t packet_index = 0U;
-    uint32_t packet_size = INITIAL_PACKET_SIZE;
+    uint16_t packet_index = 0U;
+    uint16_t packet_size = SOCKET_BUFFER_SIZE;
 
-    packet = malloc(INITIAL_PACKET_SIZE);
+    packet = malloc(SOCKET_BUFFER_SIZE);
     buffer = malloc(SOCKET_BUFFER_SIZE);
     if (packet == NULL || buffer == NULL)
     {
@@ -277,10 +307,12 @@ static void handle_recv_send(void)
 static void handle_client_connection(void)
 {
     struct sockaddr client_addr;
-    socklen_t client_addr_len = sizeof(client_addr);
+    socklen_t client_addr_len;
+    char *client_ip;
 
     while (TRUE == thread_running)
     {
+        client_addr_len = sizeof(client_addr);
         accepted_sockfd = accept(sockfd, &client_addr, &client_addr_len);
         if (accepted_sockfd == -1)
         {
@@ -296,7 +328,8 @@ static void handle_client_connection(void)
         }
         else
         {
-            syslog(LOG_INFO, "Accepted connection from %s\n", client_addr.sa_data);
+            client_ip = inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr);
+            syslog(LOG_INFO, "Accepted connection from %s\n", client_ip);
         }
 
         handle_recv_send();
@@ -304,10 +337,62 @@ static void handle_client_connection(void)
         shutdown(accepted_sockfd, SHUT_RDWR);
         close(accepted_sockfd);
         accepted_sockfd = -1;
-        syslog(LOG_INFO, "Closed connection from %s\n", client_addr.sa_data);
+        syslog(LOG_INFO, "Closed connection from %s\n", client_ip);
     }
+    syslog(LOG_INFO, "Caught signal, exiting\n");
+    exit(EXIT_SUCCESS);
 }
 
+static void run_server(void)
+{
+    pid_t pid;
+    int null_fd;
+
+    if (TRUE == run_as_daemon)
+    {   
+        pid = fork();
+        if (pid == -1)
+        {
+            syslog(LOG_ERR, "Error forking: %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        else if (pid != 0)
+        {
+            exit(EXIT_SUCCESS);
+        }
+        else
+        {
+            /* Child process, redirect stdin, stdout, stderr to /dev/null */
+            if (-1 == setsid())
+            {
+                syslog(LOG_ERR, "Error setting up session: %s\n", strerror(errno));
+                exit(EXIT_FAILURE);
+            }
+            if (0 != chdir("/"))
+            {
+                syslog(LOG_ERR, "Error changing directory: %s\n", strerror(errno));
+                exit(EXIT_FAILURE);
+            }
+
+            null_fd = open("/dev/null", O_RDWR);
+            if (null_fd == -1)
+            {
+                syslog(LOG_ERR, "Error opening /dev/null: %s\n", strerror(errno));
+                exit(EXIT_FAILURE);
+            }
+            dup2(null_fd, STDIN_FILENO);
+            dup2(null_fd, STDOUT_FILENO);
+            dup2(null_fd, STDERR_FILENO);
+            if (null_fd > STDERR_FILENO)
+            {
+                close(null_fd);
+            }
+        }
+    }
+    setup_signal_handlers();
+    atexit(garbage_collection);
+    handle_client_connection();
+}
 /* 
    ############################################################
    ################# Global functions #########################
@@ -316,11 +401,8 @@ static void handle_client_connection(void)
 int main(int argc, char *argv[])
 {
     openlog(NULL, 0, LOG_USER);
-    setup_signal_handlers();
-    atexit(garbage_collection);
+    handle_input_parameters(argc, argv);
     setup_socket();
     setup_log_file();
-    handle_client_connection();
-    syslog(LOG_INFO, "Caught signal, exiting\n");
-    exit(EXIT_SUCCESS);
+    run_server();
 }
