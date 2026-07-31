@@ -42,9 +42,9 @@
    ################# Local variables ##########################
    ############################################################ 
 */
-static FILE *logFile = NULL;
-static int sockfd = -1;
-static int accepted_sockfd = -1;
+static FILE *log_file = NULL;
+static int sock_fd = -1;
+static int accepted_sock_fd = -1;
 static volatile sig_atomic_t thread_running = TRUE;
 static uint8_t run_as_daemon = FALSE;
 
@@ -55,7 +55,7 @@ static uint8_t run_as_daemon = FALSE;
 */
 static void handle_input_parameters(int argc, char *argv[]);
 static void garbage_collection(void);
-static void sigIntTermHandler(int signum);
+static void sig_int_term_handler(int signum);
 static void setup_signal_handlers(void);
 static void setup_socket(void);
 static void setup_log_file(void);
@@ -98,50 +98,50 @@ static void handle_input_parameters(int argc, char *argv[])
 
 static void garbage_collection(void)
 {
-    if (sockfd != -1)
+    if (sock_fd != -1)
     {
         syslog(LOG_INFO, "Closing socket\n");
-        shutdown(sockfd, SHUT_RDWR);
-        close(sockfd);
-        sockfd = -1;
+        shutdown(sock_fd, SHUT_RDWR);
+        close(sock_fd);
+        sock_fd = -1;
     }
 
-    if (accepted_sockfd != -1)
+    if (accepted_sock_fd != -1)
     {
         syslog(LOG_INFO, "Closing accepted socket\n");
-        shutdown(accepted_sockfd, SHUT_RDWR);
-        close(accepted_sockfd);
-        accepted_sockfd = -1;
+        shutdown(accepted_sock_fd, SHUT_RDWR);
+        close(accepted_sock_fd);
+        accepted_sock_fd = -1;
     }
 
-    if (logFile != NULL)
+    if (log_file != NULL)
     {
         syslog(LOG_INFO, "Closing log file\n");
-        fclose(logFile);
-        logFile = NULL;
+        fclose(log_file);
+        log_file = NULL;
         syslog(LOG_INFO, "Deleting log file\n");
         unlink(LOG_FILE_NAME);
     }
 }
 
-static void sigIntTermHandler(int signum)
+static void sig_int_term_handler(int signum)
 {
     thread_running = FALSE;
 }
 
 static void setup_signal_handlers(void)
 {
-    struct sigaction sigIntTermAction;
-    sigIntTermAction.sa_handler = &sigIntTermHandler;
-    sigemptyset(&sigIntTermAction.sa_mask);
-    sigIntTermAction.sa_flags = 0;
+    struct sigaction sig_int_term_action;
+    sig_int_term_action.sa_handler = &sig_int_term_handler;
+    sigemptyset(&sig_int_term_action.sa_mask);
+    sig_int_term_action.sa_flags = 0;
 
-    if (0 != sigaction(SIGINT, &sigIntTermAction, NULL))
+    if (0 != sigaction(SIGINT, &sig_int_term_action, NULL))
     {
         syslog(LOG_ERR, "Error setting up SIGINT handler: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
-    if (0 != sigaction(SIGTERM, &sigIntTermAction, NULL))
+    if (0 != sigaction(SIGTERM, &sig_int_term_action, NULL))
     {
         syslog(LOG_ERR, "Error setting up SIGTERM handler: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
@@ -167,26 +167,26 @@ static void setup_socket(void)
         exit(EXIT_FAILURE);
     }
 
-    sockfd = socket(addrinfo->ai_family, addrinfo->ai_socktype, addrinfo->ai_protocol);
-    if (sockfd == -1)
+    sock_fd = socket(addrinfo->ai_family, addrinfo->ai_socktype, addrinfo->ai_protocol);
+    if (sock_fd == -1)
     {
         syslog(LOG_ERR, "Error creating socket: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
-    if (0 != setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &socket_reuse_option, sizeof(socket_reuse_option)))
+    if (0 != setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &socket_reuse_option, sizeof(socket_reuse_option)))
     {
         syslog(LOG_ERR, "Error setting socket options: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
 
-    if (0 != bind(sockfd, addrinfo->ai_addr, addrinfo->ai_addrlen))
+    if (0 != bind(sock_fd, addrinfo->ai_addr, addrinfo->ai_addrlen))
     {
         syslog(LOG_ERR, "Error binding socket: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
     freeaddrinfo(addrinfo);
 
-    if (0 != listen(sockfd, SOCKET_BACKLOG))
+    if (0 != listen(sock_fd, SOCKET_BACKLOG))
     {
         syslog(LOG_ERR, "Error listening on socket: %s\n", strerror(errno));
         exit(EXIT_FAILURE);   
@@ -195,8 +195,8 @@ static void setup_socket(void)
 
 static void setup_log_file(void)
 {
-    logFile = fopen(LOG_FILE_NAME, "w+");
-    if (logFile == NULL)
+    log_file = fopen(LOG_FILE_NAME, "w+");
+    if (log_file == NULL)
     {
         syslog(LOG_ERR, "Error opening file: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
@@ -209,18 +209,18 @@ static void send_file(char *buffer, uint32_t buffer_size)
     ssize_t bytes_sent;
     size_t total_bytes_sent;
 
-    if (0 != fseek(logFile, 0, SEEK_SET))
+    if (0 != fseek(log_file, 0, SEEK_SET))
     {
         syslog(LOG_ERR, "Error seeking to start of file: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
 
     do {
-        bytes_read = fread(buffer, 1, buffer_size, logFile);
+        bytes_read = fread(buffer, 1, buffer_size, log_file);
         total_bytes_sent = 0U;
         while (bytes_read > total_bytes_sent)
         {
-            bytes_sent = send(accepted_sockfd, buffer + total_bytes_sent, bytes_read - total_bytes_sent, 0);
+            bytes_sent = send(accepted_sock_fd, buffer + total_bytes_sent, bytes_read - total_bytes_sent, 0);
             if (bytes_sent == -1)
             {
                 syslog(LOG_ERR, "Error sending data: %s\n", strerror(errno));
@@ -230,7 +230,7 @@ static void send_file(char *buffer, uint32_t buffer_size)
         }
     }while (bytes_read > 0);
 
-    if (0 != fseek(logFile, 0, SEEK_END))
+    if (0 != fseek(log_file, 0, SEEK_END))
     {
         syslog(LOG_ERR, "Error seeking to end of file: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
@@ -254,7 +254,7 @@ static void handle_recv_send(void)
     }
 
     do {
-        bytes_received = recv(accepted_sockfd, buffer, SOCKET_BUFFER_SIZE, 0);
+        bytes_received = recv(accepted_sock_fd, buffer, SOCKET_BUFFER_SIZE, 0);
         if (bytes_received > 0)
         {
             for (uint16_t i = 0U; i < bytes_received; i++)
@@ -281,8 +281,8 @@ static void handle_recv_send(void)
                 packet[packet_index++] = buffer[i];
                 if (buffer[i] == '\n')
                 {
-                    fwrite(packet, 1, packet_index, logFile);
-                    fflush(logFile);
+                    fwrite(packet, 1, packet_index, log_file);
+                    fflush(log_file);
                     send_file(packet, packet_size);
                     packet_index = 0U;
                 }
@@ -313,8 +313,8 @@ static void handle_client_connection(void)
     while (TRUE == thread_running)
     {
         client_addr_len = sizeof(client_addr);
-        accepted_sockfd = accept(sockfd, &client_addr, &client_addr_len);
-        if (accepted_sockfd == -1)
+        accepted_sock_fd = accept(sock_fd, &client_addr, &client_addr_len);
+        if (accepted_sock_fd == -1)
         {
             if (FALSE == thread_running)
             {
@@ -334,9 +334,9 @@ static void handle_client_connection(void)
 
         handle_recv_send();
 
-        shutdown(accepted_sockfd, SHUT_RDWR);
-        close(accepted_sockfd);
-        accepted_sockfd = -1;
+        shutdown(accepted_sock_fd, SHUT_RDWR);
+        close(accepted_sock_fd);
+        accepted_sock_fd = -1;
         syslog(LOG_INFO, "Closed connection from %s\n", client_ip);
     }
     syslog(LOG_INFO, "Caught signal, exiting\n");
