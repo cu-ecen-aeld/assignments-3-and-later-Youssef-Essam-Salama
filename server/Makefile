@@ -1,6 +1,6 @@
 CC = $(CROSS_COMPILE)gcc
 
-CFLAGS = -Wall -g -I $(INC_DIR)
+CFLAGS = -Wall -Werror -g -I $(INC_DIR)
 LFLAGS = 
 
 INC_DIR = .
