@@ -1,7 +1,7 @@
 CC = $(CROSS_COMPILE)gcc
 
-CFLAGS = -Wall -Werror -g -I $(INC_DIR)
-LFLAGS = 
+CFLAGS = -Wall -Werror -g -pthread -I $(INC_DIR)
+LFLAGS = -pthread
 
 INC_DIR = ./api
 INC_FILES = $(wildcard $(INC_DIR)/*.h)
@@ -15,15 +15,18 @@ OBJ_FILES = $(addprefix $(OBJ_DIR)/,$(notdir $(SRC_FILES:.c=.o)))
 OUTPUT_DIR = ./out
 EXECUTABLE = aesdsocket
 
-.PHONY: clean
+.PHONY: all clean directories
 
-all: $(EXECUTABLE)
+all: directories $(EXECUTABLE)
+
+directories:
+	mkdir -p $(OBJ_DIR) $(OUTPUT_DIR)
 
 $(EXECUTABLE): $(OBJ_FILES)
 	$(CC) $(LFLAGS) $^ -o $(OUTPUT_DIR)/$@
 
-$(OBJ_FILES): $(SRC_FILES) $(INC_FILES)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(INC_FILES) | directories
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(EXECUTABLE) $(OBJ_FILES)
+	rm -rf $(OBJ_FILES) $(OUTPUT_DIR)/$(EXECUTABLE)
