@@ -78,6 +78,9 @@ static uint8_t handle_input_parameters(int argc, char *argv[]);
 static void close_socket(int *sock_fd);
 static void sig_int_term_handler(int signum);
 static uint8_t setup_signal_handlers(void);
+static uint8_t create_server_socket(const struct addrinfo *addrinfo);
+static uint8_t bind_server_socket(const struct addrinfo *addrinfo);
+static uint8_t listen_on_server_socket(void);
 static uint8_t setup_socket(void);
 static uint8_t setup_log_file(void);
 static void try_joining_client_communication_threads(void);
@@ -86,6 +89,15 @@ static void force_joining_client_communication_threads(void);
 static void *thread_handler(void *arg);
 static uint8_t setup_thread_handler(pthread_t *thread_id);
 static uint8_t send_file(int sock_fd, char *buffer, uint32_t buffer_size);
+static uint8_t ensure_packet_capacity(char **packet, uint16_t *packet_size,
+				      uint16_t packet_index);
+static uint8_t flush_packet_to_client(int sock_fd, char *packet,
+				      uint16_t packet_len,
+				      uint16_t send_buffer_size);
+static uint8_t process_received_data(int sock_fd, const char *buffer,
+				     int bytes_received, char **packet,
+				     uint16_t *packet_index,
+				     uint16_t *packet_size);
 static void *handle_client_communication(void *arg);
 static uint8_t add_thread_to_list(pthread_t thread_id, int sock_fd,
 				  const char *client_ip);
@@ -164,10 +176,59 @@ static uint8_t setup_signal_handlers(void)
 	return ret_val;
 }
 
+static uint8_t create_server_socket(const struct addrinfo *addrinfo)
+{
+	uint8_t ret_val = EXIT_SUCCESS;
+	int socket_reuse_option = 1;
+
+	server_sock_fd = socket(addrinfo->ai_family, addrinfo->ai_socktype,
+				addrinfo->ai_protocol);
+	if (server_sock_fd == -1) {
+		syslog(LOG_ERR, "Error creating socket: %s\n", strerror(errno));
+		ret_val = EXIT_FAILURE;
+	} else if (0 != setsockopt(server_sock_fd, SOL_SOCKET, SO_REUSEADDR,
+				   &socket_reuse_option,
+				   sizeof(socket_reuse_option))) {
+		syslog(LOG_ERR, "Error setting socket options: %s\n",
+		       strerror(errno));
+		ret_val = EXIT_FAILURE;
+	} else {
+		/* Do nothing */
+	}
+
+	return ret_val;
+}
+
+static uint8_t bind_server_socket(const struct addrinfo *addrinfo)
+{
+	uint8_t ret_val = EXIT_SUCCESS;
+
+	if (0 !=
+	    bind(server_sock_fd, addrinfo->ai_addr, addrinfo->ai_addrlen)) {
+		syslog(LOG_ERR, "Error binding socket: %s\n", strerror(errno));
+		ret_val = EXIT_FAILURE;
+	}
+
+	return ret_val;
+}
+
+static uint8_t listen_on_server_socket(void)
+{
+	uint8_t ret_val = EXIT_SUCCESS;
+
+	if (0 != listen(server_sock_fd, SOCKET_BACKLOG)) {
+		syslog(LOG_ERR, "Error listening on socket: %s\n",
+		       strerror(errno));
+		ret_val = EXIT_FAILURE;
+	}
+
+	return ret_val;
+}
+
 static uint8_t setup_socket(void)
 {
-	int ret_val;
-	int socket_reuse_option = 1;
+	uint8_t ret_val = EXIT_SUCCESS;
+	int addrinfo_ret;
 	struct addrinfo *addrinfo;
 	struct addrinfo hints;
 
@@ -176,50 +237,20 @@ static uint8_t setup_socket(void)
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 
-	ret_val = getaddrinfo(NULL, SOCKET_PORT, &hints, &addrinfo);
-	if (ret_val != 0) {
+	addrinfo_ret = getaddrinfo(NULL, SOCKET_PORT, &hints, &addrinfo);
+	if (addrinfo_ret != 0) {
 		syslog(LOG_ERR, "Error getting address info: %s\n",
-		       gai_strerror(ret_val));
+		       gai_strerror(addrinfo_ret));
 		ret_val = EXIT_FAILURE;
-	}
-	if (EXIT_SUCCESS == ret_val) {
-		do {
-			server_sock_fd = socket(addrinfo->ai_family,
-						addrinfo->ai_socktype,
-						addrinfo->ai_protocol);
-			if (server_sock_fd == -1) {
-				syslog(LOG_ERR, "Error creating socket: %s\n",
-				       strerror(errno));
-				ret_val = EXIT_FAILURE;
-				break;
-			}
-			if (0 != setsockopt(server_sock_fd, SOL_SOCKET,
-					    SO_REUSEADDR, &socket_reuse_option,
-					    sizeof(socket_reuse_option))) {
-				syslog(LOG_ERR,
-				       "Error setting socket options: %s\n",
-				       strerror(errno));
-				ret_val = EXIT_FAILURE;
-				break;
-			}
-
-			if (0 != bind(server_sock_fd, addrinfo->ai_addr,
-				      addrinfo->ai_addrlen)) {
-				syslog(LOG_ERR, "Error binding socket: %s\n",
-				       strerror(errno));
-				ret_val = EXIT_FAILURE;
-				break;
-			}
-		} while (0);
-
+	} else {
+		ret_val = create_server_socket(addrinfo);
+		if (EXIT_SUCCESS == ret_val) {
+			ret_val = bind_server_socket(addrinfo);
+		}
+		if (EXIT_SUCCESS == ret_val) {
+			ret_val = listen_on_server_socket();
+		}
 		freeaddrinfo(addrinfo);
-	}
-
-	if ((EXIT_SUCCESS == ret_val) &&
-	    (0 != listen(server_sock_fd, SOCKET_BACKLOG))) {
-		syslog(LOG_ERR, "Error listening on socket: %s\n",
-		       strerror(errno));
-		ret_val = EXIT_FAILURE;
 	}
 
 	return ret_val;
@@ -353,6 +384,82 @@ static uint8_t send_file(int sock_fd, char *buffer, uint32_t buffer_size)
 	return ret_val;
 }
 
+static uint8_t ensure_packet_capacity(char **packet, uint16_t *packet_size,
+				      uint16_t packet_index)
+{
+	uint8_t ret_val = EXIT_SUCCESS;
+	char *new_packet;
+
+	if ((packet_index >= *packet_size) &&
+	    (packet_index < MAX_PACKET_SIZE)) {
+		new_packet = realloc(*packet, (*packet_size) * 2);
+		if (new_packet == NULL) {
+			syslog(LOG_ERR,
+			       "Error reallocating memory for packet: %s\n",
+			       strerror(errno));
+			ret_val = EXIT_FAILURE;
+		} else {
+			*packet = new_packet;
+			*packet_size *= 2;
+		}
+	} else if (packet_index >= MAX_PACKET_SIZE) {
+		syslog(LOG_ERR, "Packet size exceeded max size\n");
+		ret_val = EXIT_FAILURE;
+	} else {
+		/* Do nothing */
+	}
+
+	return ret_val;
+}
+
+static uint8_t flush_packet_to_client(int sock_fd, char *packet,
+				      uint16_t packet_len,
+				      uint16_t send_buffer_size)
+{
+	uint8_t ret_val = EXIT_SUCCESS;
+
+	pthread_mutex_lock(&log_file_mutex);
+	fwrite(packet, 1, packet_len, log_file);
+	fflush(log_file);
+	ret_val = send_file(sock_fd, packet, send_buffer_size);
+	pthread_mutex_unlock(&log_file_mutex);
+
+	if (EXIT_SUCCESS != ret_val) {
+		syslog(LOG_ERR, "Error sending file: %s\n", strerror(errno));
+	}
+
+	return ret_val;
+}
+
+static uint8_t process_received_data(int sock_fd, const char *buffer,
+				     int bytes_received, char **packet,
+				     uint16_t *packet_index,
+				     uint16_t *packet_size)
+{
+	uint8_t ret_val = EXIT_SUCCESS;
+	uint16_t i;
+
+	for (i = 0U; i < (uint16_t)bytes_received; i++) {
+		ret_val = ensure_packet_capacity(packet, packet_size,
+						 *packet_index);
+		if (EXIT_SUCCESS != ret_val) {
+			break;
+		}
+
+		(*packet)[(*packet_index)++] = buffer[i];
+		if (buffer[i] == '\n') {
+			ret_val = flush_packet_to_client(
+				sock_fd, *packet, *packet_index, *packet_size);
+			*packet_index = 0U;
+			if (EXIT_SUCCESS != ret_val) {
+				break;
+			}
+		}
+	}
+
+	return ret_val;
+}
+
 static void *handle_client_communication(void *arg)
 {
 	uint8_t ret_val = EXIT_SUCCESS;
@@ -360,7 +467,6 @@ static void *handle_client_communication(void *arg)
 	int sock_fd = thread_node->client_sock_fd;
 
 	char *packet = NULL;
-	char *new_packet = NULL;
 	char *buffer = NULL;
 	int bytes_received = 0;
 	uint16_t packet_index = 0U;
@@ -377,56 +483,11 @@ static void *handle_client_communication(void *arg)
 			bytes_received =
 				recv(sock_fd, buffer, SOCKET_BUFFER_SIZE, 0);
 			if (bytes_received > 0) {
-				for (uint16_t i = 0U; i < bytes_received; i++) {
-					if ((packet_index >= packet_size) &&
-					    (packet_index < MAX_PACKET_SIZE)) {
-						new_packet = realloc(
-							packet,
-							packet_size * 2);
-						if (new_packet == NULL) {
-							syslog(LOG_ERR,
-							       "Error "
-							       "reallocating "
-							       "memory for "
-							       "packet: %s\n",
-							       strerror(errno));
-							bytes_received = 0;
-							break;
-						}
-						packet = new_packet;
-						packet_size *= 2;
-					} else if (packet_index >=
-						   MAX_PACKET_SIZE) {
-						syslog(LOG_ERR,
-						       "Packet size exceeded "
-						       "max size\n");
-						bytes_received = 0;
-						break;
-					} else {
-						/* Do nothing */
-					}
-					packet[packet_index++] = buffer[i];
-					if (buffer[i] == '\n') {
-						pthread_mutex_lock(
-							&log_file_mutex);
-						fwrite(packet, 1, packet_index,
-						       log_file);
-						fflush(log_file);
-						ret_val = send_file(
-							sock_fd, packet,
-							packet_size);
-						pthread_mutex_unlock(
-							&log_file_mutex);
-						packet_index = 0U;
-						if (EXIT_SUCCESS != ret_val) {
-							syslog(LOG_ERR,
-							       "Error sending "
-							       "file: %s\n",
-							       strerror(errno));
-							bytes_received = 0;
-							break;
-						}
-					}
+				ret_val = process_received_data(
+					sock_fd, buffer, bytes_received,
+					&packet, &packet_index, &packet_size);
+				if (EXIT_SUCCESS != ret_val) {
+					bytes_received = 0;
 				}
 			}
 		} while (bytes_received > 0 && process_running == TRUE);
