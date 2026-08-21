@@ -3,16 +3,16 @@ CC = $(CROSS_COMPILE)gcc
 CFLAGS = -Wall -Werror -g -I $(INC_DIR)
 LFLAGS = 
 
-INC_DIR = .
+INC_DIR = ./api
 INC_FILES = $(wildcard $(INC_DIR)/*.h)
 
-SRC_DIR = .
+SRC_DIR = ./src
 SRC_FILES = $(wildcard $(SRC_DIR)/*.c)
 
-OBJ_DIR = .
+OBJ_DIR = ./obj
 OBJ_FILES = $(addprefix $(OBJ_DIR)/,$(notdir $(SRC_FILES:.c=.o)))
 
-OUTPUT_DIR = .
+OUTPUT_DIR = ./out
 EXECUTABLE = aesdsocket
 
 .PHONY: clean
