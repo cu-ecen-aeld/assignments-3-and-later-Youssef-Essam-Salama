@@ -1,10 +1,16 @@
 /*
  * Author: Youssef Essam Salama
- * Date: 2026-07-29
- * Version: 1.0
- * Description: AESD Assignment 3 - Per-client packet / file protocol
+ * Date: 2026-08-21
+ * Version: 2.0
+ * Description: AESD Assignment 6 - Per-client recv/packet assembly,
+ *              log file append, and full-file send-back
  */
 
+/*
+   ############################################################
+   ################# Include libraries ########################
+   ############################################################
+*/
 #include "aesdsocket_client.h"
 #include "aesdsocket_common.h"
 #include "aesdsocket_socket.h"

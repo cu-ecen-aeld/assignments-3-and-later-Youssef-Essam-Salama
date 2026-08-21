@@ -1,10 +1,16 @@
 /*
  * Author: Youssef Essam Salama
- * Date: 2026-07-29
- * Version: 1.0
- * Description: AESD Assignment 3 - Client thread list and joiner
+ * Date: 2026-08-21
+ * Version: 2.0
+ * Description: AESD Assignment 6 - Client thread list, joiner thread,
+ *              create_client_communication_thread, and timestamp thread
  */
 
+/*
+   ############################################################
+   ################# Include libraries ########################
+   ############################################################
+*/
 #include "aesdsocket_threads.h"
 #include "aesdsocket_client.h"
 #include "aesdsocket_socket.h"
@@ -13,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 /*
@@ -26,6 +33,8 @@ static void force_joining_client_communication_threads(void);
 static void *thread_handler(void *arg);
 static uint8_t add_thread_to_list(pthread_t thread_id, int sock_fd,
 				  const char *client_ip);
+static void add_time_stamp_to_log_file(void);
+static void *time_stamping_thread_func(void *arg);
 
 /*
    ############################################################
@@ -125,6 +134,30 @@ static uint8_t add_thread_to_list(pthread_t thread_id, int sock_fd,
 	return ret_val;
 }
 
+static void add_time_stamp_to_log_file(void)
+{
+	char timestamp_buffer[200];
+	time_t now = time(NULL);
+
+	strftime(timestamp_buffer, sizeof(timestamp_buffer),
+		 "%a, %d %b %Y %T %z", localtime(&now));
+
+	pthread_mutex_lock(&log_file_mutex);
+	fprintf(log_file, "timestamp:%s\n", timestamp_buffer);
+	fflush(log_file);
+	pthread_mutex_unlock(&log_file_mutex);
+}
+
+static void *time_stamping_thread_func(void *arg)
+{
+	(void)arg;
+	while (TRUE == process_running) {
+		add_time_stamp_to_log_file();
+		sleep(10);
+	}
+	pthread_exit(NULL);
+}
+
 /*
    ############################################################
    ################# Global functions #########################
@@ -179,5 +212,19 @@ uint8_t create_client_communication_thread(int sock_fd, const char *client_ip)
 		close_socket(&sock_fd);
 	}
 
+	return ret_val;
+}
+
+uint8_t setup_time_stamping_thread(pthread_t *thread_id)
+{
+	uint8_t ret_val = EXIT_SUCCESS;
+
+	ret_val = pthread_create(thread_id, NULL, time_stamping_thread_func,
+				 NULL);
+	if (0 != ret_val) {
+		syslog(LOG_ERR, "Error creating time stamping thread: %s\n",
+		       strerror(ret_val));
+		ret_val = EXIT_FAILURE;
+	}
 	return ret_val;
 }

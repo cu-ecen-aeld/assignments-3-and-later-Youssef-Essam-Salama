@@ -1,8 +1,9 @@
 /*
  * Author: Youssef Essam Salama
- * Date: 2026-07-29
- * Version: 1.0
- * Description: AESD Assignment 3 - Server entry point
+ * Date: 2026-08-21
+ * Version: 2.0
+ * Description: AESD Assignment 6 - Server entry point (main, daemon,
+ *              signals, accept loop, shared process globals)
  */
 
 /*
@@ -38,6 +39,7 @@ pthread_mutex_t log_file_mutex = PTHREAD_MUTEX_INITIALIZER;
    ############## Local functions declarations ################
    ############################################################
 */
+static void stop_server_process(void);
 static uint8_t handle_input_parameters(int argc, char *argv[]);
 static void sig_int_term_handler(int signum);
 static uint8_t setup_log_file(void);
@@ -60,6 +62,11 @@ static uint8_t run_as_daemon = FALSE;
    ################# Local functions definitions ##############
    ############################################################
 */
+static void stop_server_process(void)
+{
+	process_running = FALSE;
+}
+
 static uint8_t handle_input_parameters(int argc, char *argv[])
 {
 	uint8_t ret_val = EXIT_SUCCESS;
@@ -86,7 +93,7 @@ static uint8_t handle_input_parameters(int argc, char *argv[])
 static void sig_int_term_handler(int signum)
 {
 	(void)signum;
-	process_running = FALSE;
+	stop_server_process();
 	if (server_sock_fd != -1) {
 		/* Force main thread break out of accept() system call */
 		close_socket(&server_sock_fd);
@@ -168,7 +175,7 @@ static uint8_t handle_client_connections(void)
 		syslog(LOG_INFO, "Caught signal, exiting\n");
 	}
 
-	process_running = FALSE;
+	stop_server_process();
 	return ret_val;
 }
 
@@ -232,14 +239,39 @@ static uint8_t handle_run_as_daemon(void)
 static uint8_t run_server(void)
 {
 	uint8_t ret_val = EXIT_SUCCESS;
+
+	uint8_t time_stamping_thread_setup_ret_val = EXIT_FAILURE;
+	uint8_t thread_handler_setup_ret_val = EXIT_FAILURE;
+	pthread_t time_stamping_thread_id;
 	pthread_t thread_handler_id;
 
-	ret_val = setup_thread_handler(&thread_handler_id);
-	if (EXIT_SUCCESS == ret_val) {
-		ret_val = handle_client_connections();
-		pthread_join(thread_handler_id, NULL);
+	time_stamping_thread_setup_ret_val =
+		setup_time_stamping_thread(&time_stamping_thread_id);
+
+	if (EXIT_SUCCESS != time_stamping_thread_setup_ret_val) {
+		stop_server_process();
+		ret_val = EXIT_FAILURE;
 	}
 
+	if (ret_val == EXIT_SUCCESS) {
+		thread_handler_setup_ret_val =
+			setup_thread_handler(&thread_handler_id);
+		if (EXIT_SUCCESS != thread_handler_setup_ret_val) {
+			stop_server_process();
+			ret_val = EXIT_FAILURE;
+		}
+	}
+
+	if (EXIT_SUCCESS == ret_val) {
+		ret_val = handle_client_connections();
+	}
+
+	if (EXIT_SUCCESS == thread_handler_setup_ret_val) {
+		pthread_join(thread_handler_id, NULL);
+	}
+	if (EXIT_SUCCESS == time_stamping_thread_setup_ret_val) {
+		pthread_join(time_stamping_thread_id, NULL);
+	}
 	return ret_val;
 }
 

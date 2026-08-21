@@ -1,10 +1,16 @@
 /*
  * Author: Youssef Essam Salama
- * Date: 2026-07-29
- * Version: 1.0
- * Description: AESD Assignment 3 - Socket setup and helpers
+ * Date: 2026-08-21
+ * Version: 2.0
+ * Description: AESD Assignment 6 - Listening socket create/bind/listen
+ *              and close_socket helper
  */
 
+/*
+   ############################################################
+   ################# Include libraries ########################
+   ############################################################
+*/
 #include "aesdsocket_socket.h"
 #include "aesdsocket_common.h"
 

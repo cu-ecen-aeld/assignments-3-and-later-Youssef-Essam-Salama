@@ -12,7 +12,7 @@ SRC_FILES = $(wildcard $(SRC_DIR)/*.c)
 OBJ_DIR = ./obj
 OBJ_FILES = $(addprefix $(OBJ_DIR)/,$(notdir $(SRC_FILES:.c=.o)))
 
-OUTPUT_DIR = ./out
+OUTPUT_DIR = .
 EXECUTABLE = aesdsocket
 
 .PHONY: all clean directories
