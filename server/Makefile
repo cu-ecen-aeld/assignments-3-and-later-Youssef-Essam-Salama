@@ -1,7 +1,7 @@
-CC = $(CROSS_COMPILE)gcc
+CC ?= $(CROSS_COMPILE)gcc
 
-CFLAGS = -Wall -Werror -g -pthread -I $(INC_DIR)
-LFLAGS = -pthread
+CFLAGS ?= -Wall -Werror -g -pthread -I $(INC_DIR)
+LFLAGS ?= -pthread
 
 INC_DIR = ./api
 INC_FILES = $(wildcard $(INC_DIR)/*.h)
