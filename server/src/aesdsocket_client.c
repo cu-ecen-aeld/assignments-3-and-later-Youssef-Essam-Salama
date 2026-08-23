@@ -61,7 +61,8 @@ static uint8_t send_file(int sock_fd, char *buffer, uint32_t buffer_size)
 			while (bytes_read > total_bytes_sent) {
 				bytes_sent =
 					send(sock_fd, buffer + total_bytes_sent,
-					     bytes_read - total_bytes_sent, 0);
+					     bytes_read - total_bytes_sent,
+					     MSG_NOSIGNAL);
 				if (bytes_sent == -1) {
 					syslog(LOG_ERR,
 					       "Error sending data: %s\n",
@@ -73,8 +74,7 @@ static uint8_t send_file(int sock_fd, char *buffer, uint32_t buffer_size)
 			}
 		} while (bytes_read > 0);
 
-		if ((EXIT_SUCCESS == ret_val) &&
-		    (0 != fseek(log_file, 0, SEEK_END))) {
+		if (0 != fseek(log_file, 0, SEEK_END)) {
 			syslog(LOG_ERR, "Error seeking to end of file: %s\n",
 			       strerror(errno));
 			ret_val = EXIT_FAILURE;
@@ -214,6 +214,7 @@ void *handle_client_communication(void *arg)
 	}
 	syslog(LOG_INFO, "Closed connection from %s\n", thread_node->client_ip);
 	thread_node->thread_completed = TRUE;
+	pthread_cond_signal(&thread_list_cond);
 	pthread_mutex_unlock(&thread_list_mutex);
 
 	pthread_exit(NULL);

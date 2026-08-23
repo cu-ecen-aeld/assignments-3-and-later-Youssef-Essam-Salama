@@ -62,10 +62,7 @@ static uint8_t run_as_daemon = FALSE;
    ################# Local functions definitions ##############
    ############################################################
 */
-static void stop_server_process(void)
-{
-	process_running = FALSE;
-}
+static void stop_server_process(void) { process_running = FALSE; }
 
 static uint8_t handle_input_parameters(int argc, char *argv[])
 {
@@ -267,6 +264,7 @@ static uint8_t run_server(void)
 	}
 
 	if (EXIT_SUCCESS == thread_handler_setup_ret_val) {
+		wake_thread_handler();
 		pthread_join(thread_handler_id, NULL);
 	}
 	if (EXIT_SUCCESS == time_stamping_thread_setup_ret_val) {
