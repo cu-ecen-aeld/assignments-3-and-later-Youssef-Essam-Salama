@@ -1,7 +1,7 @@
 CC ?= $(CROSS_COMPILE)gcc
 
 CFLAGS ?= -Wall -Werror -g -pthread -I $(INC_DIR)
-LFLAGS ?= -pthread
+LDFLAGS ?= -pthread
 
 INC_DIR = ./api
 INC_FILES = $(wildcard $(INC_DIR)/*.h)
@@ -23,7 +23,7 @@ directories:
 	mkdir -p $(OBJ_DIR) $(OUTPUT_DIR)
 
 $(EXECUTABLE): $(OBJ_FILES)
-	$(CC) $(LFLAGS) $^ -o $(OUTPUT_DIR)/$@
+	$(CC) $(LDFLAGS) $^ -o $(OUTPUT_DIR)/$@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(INC_FILES) | directories
 	$(CC) $(CFLAGS) -c $< -o $@
