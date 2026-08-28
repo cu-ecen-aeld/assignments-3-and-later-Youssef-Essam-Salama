@@ -73,7 +73,7 @@ static ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 	 * TODO: handle read
 	 */
 
-	retval = down_read_killable(&aesd_device.rw_semaphore);
+	retval = down_read_killable(&aesd_device.circular_buffer_semaphore);
 	if (0 != retval) {
 		goto fn_return;
 	}
@@ -97,7 +97,7 @@ static ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 		char_offset += copy_size;
 	}
 
-	up_read(&aesd_device.rw_semaphore);
+	up_read(&aesd_device.circular_buffer_semaphore);
 
 	*f_pos = char_offset;
 fn_return:
@@ -109,49 +109,86 @@ static ssize_t aesd_write(struct file *filp, const char __user *buf,
 {
 	ssize_t retval;
 	unsigned long k_retval;
-	struct aesd_buffer_entry new_entry;
 	const char *returned_entry_buff_ptr;
+	const char *old_temp_entry_buffptr = NULL;
 
 	PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
 	/**
 	 * TODO: handle write
 	 */
 
-	new_entry.buffptr = kmalloc(count, GFP_KERNEL);
-	if (NULL == new_entry.buffptr) {
-		retval = -ENOMEM;
+	if (count == 0) {
+		retval = 0;
 		goto fn_return;
 	}
-	new_entry.size = count;
 
-	k_retval = copy_from_user((void *)new_entry.buffptr, (const void *)buf,
-				  count);
+	retval = mutex_lock_killable(&aesd_device.temp_entry_mutex);
+	if (0 != retval) {
+		goto mutex_lock_fail;
+	}
+
+	if (NULL == aesd_device.temp_entry.buffptr) {
+		aesd_device.temp_entry.buffptr = kmalloc(count, GFP_KERNEL);
+	} else {
+		old_temp_entry_buffptr = aesd_device.temp_entry.buffptr;
+		aesd_device.temp_entry.buffptr = krealloc(
+			aesd_device.temp_entry.buffptr,
+			aesd_device.temp_entry.size + count, GFP_KERNEL);
+	}
+
+	if (NULL == aesd_device.temp_entry.buffptr) {
+		retval = -ENOMEM;
+        kfree(old_temp_entry_buffptr);
+        aesd_device.temp_entry.size = 0;
+        goto memory_allocation_fail;
+	}
+
+	k_retval = copy_from_user((void *)aesd_device.temp_entry.buffptr +
+					  aesd_device.temp_entry.size,
+				  (const void *)buf, count);
 	if (0 != k_retval) {
 		retval = -EFAULT;
 		goto k_copy_from_user_fail;
 	}
 
-	retval = down_write_killable(&aesd_device.rw_semaphore);
-	if (0 != retval) {
-		goto lock_fail;
+	aesd_device.temp_entry.size += count;
+
+	if ('\n' !=
+	    aesd_device.temp_entry.buffptr[aesd_device.temp_entry.size - 1]) {
+		retval = count;
+		goto incomplete_write;
 	}
 
-	returned_entry_buff_ptr =
-		aesd_circular_buffer_add_entry(&aesd_device.buffer, &new_entry);
+	retval = down_write_killable(&aesd_device.circular_buffer_semaphore);
+	if (0 != retval) {
+		goto semaphore_lock_fail;
+	}
 
-	up_write(&aesd_device.rw_semaphore);
+	returned_entry_buff_ptr = aesd_circular_buffer_add_entry(
+		&aesd_device.buffer, &aesd_device.temp_entry);
+
+    aesd_device.temp_entry.buffptr = NULL;
+    aesd_device.temp_entry.size = 0;
+
+    mutex_unlock(&aesd_device.temp_entry_mutex);
+
+	up_write(&aesd_device.circular_buffer_semaphore);
 
 	kfree(returned_entry_buff_ptr);
 
 	retval = count;
-	goto fn_return;
+	return retval;
 
-lock_fail:
+semaphore_lock_fail:
+incomplete_write:
 k_copy_from_user_fail:
-	kfree(new_entry.buffptr);
+memory_allocation_fail:
+	mutex_unlock(&aesd_device.temp_entry_mutex);
+mutex_lock_fail:
 fn_return:
 	return retval;
 }
+
 struct file_operations aesd_fops = {
 	.owner = THIS_MODULE,
 	.read = aesd_read,
@@ -189,7 +226,8 @@ static int __init aesd_init_module(void)
 	/**
 	 * TODO: initialize the AESD specific portion of the device
 	 */
-	init_rwsem(&aesd_device.rw_semaphore);
+	mutex_init(&aesd_device.temp_entry_mutex);
+	init_rwsem(&aesd_device.circular_buffer_semaphore);
 	aesd_circular_buffer_init(&aesd_device.buffer);
 
 	result = aesd_setup_cdev(&aesd_device);
@@ -222,9 +260,13 @@ static void __exit aesd_cleanup_module(void)
 	/**
 	 * TODO: cleanup AESD specific poritions here as necessary
 	 */
-	down_write(&aesd_device.rw_semaphore);
+	down_write(&aesd_device.circular_buffer_semaphore);
 	aesd_circular_buffer_cleanup(&aesd_device.buffer);
-	up_write(&aesd_device.rw_semaphore);
+	up_write(&aesd_device.circular_buffer_semaphore);
+
+	mutex_lock(&aesd_device.temp_entry_mutex);
+	kfree(aesd_device.temp_entry.buffptr);
+	mutex_unlock(&aesd_device.temp_entry_mutex);
 
 	unregister_chrdev_region(devno, 1);
 }
