@@ -233,30 +233,54 @@ static uint8_t handle_run_as_daemon(void)
 	return ret_val;
 }
 
-static uint8_t run_server(void)
+#if (USE_AESD_CHAR_DEVICE == 0U)
+static uint8_t run_time_stamping_thread(pthread_t *time_stamping_thread_id)
 {
 	uint8_t ret_val = EXIT_SUCCESS;
 
-	uint8_t time_stamping_thread_setup_ret_val = EXIT_FAILURE;
-	uint8_t thread_handler_setup_ret_val = EXIT_FAILURE;
-	pthread_t time_stamping_thread_id;
-	pthread_t thread_handler_id;
+	ret_val = setup_time_stamping_thread(time_stamping_thread_id);
 
-	time_stamping_thread_setup_ret_val =
-		setup_time_stamping_thread(&time_stamping_thread_id);
-
-	if (EXIT_SUCCESS != time_stamping_thread_setup_ret_val) {
+	if (EXIT_SUCCESS != ret_val) {
 		stop_server_process();
 		ret_val = EXIT_FAILURE;
 	}
 
+	return ret_val;
+}
+#endif
+
+static uint8_t run_thread_handler(pthread_t *thread_handler_id)
+{
+	uint8_t ret_val = EXIT_SUCCESS;
+
+	ret_val = setup_thread_handler(thread_handler_id);
+	if (EXIT_SUCCESS != ret_val) {
+		stop_server_process();
+		ret_val = EXIT_FAILURE;
+	}
+
+	return ret_val;
+}
+
+static uint8_t run_server(void)
+{
+	uint8_t ret_val = EXIT_SUCCESS;
+
+	uint8_t thread_handler_setup_ret_val = EXIT_FAILURE;
+	pthread_t thread_handler_id;
+
+#if (USE_AESD_CHAR_DEVICE == 0U)
+	uint8_t time_stamping_thread_setup_ret_val = EXIT_FAILURE;
+	pthread_t time_stamping_thread_id;
+	time_stamping_thread_setup_ret_val =
+		run_time_stamping_thread(&time_stamping_thread_id);
+	ret_val = time_stamping_thread_setup_ret_val;
+#endif
+
 	if (ret_val == EXIT_SUCCESS) {
 		thread_handler_setup_ret_val =
-			setup_thread_handler(&thread_handler_id);
-		if (EXIT_SUCCESS != thread_handler_setup_ret_val) {
-			stop_server_process();
-			ret_val = EXIT_FAILURE;
-		}
+			run_thread_handler(&thread_handler_id);
+		ret_val = thread_handler_setup_ret_val;
 	}
 
 	if (EXIT_SUCCESS == ret_val) {
@@ -267,9 +291,13 @@ static uint8_t run_server(void)
 		wake_thread_handler();
 		pthread_join(thread_handler_id, NULL);
 	}
+
+#if (USE_AESD_CHAR_DEVICE == 0U)
 	if (EXIT_SUCCESS == time_stamping_thread_setup_ret_val) {
 		pthread_join(time_stamping_thread_id, NULL);
 	}
+#endif
+
 	return ret_val;
 }
 
@@ -284,8 +312,10 @@ static void free_resources(void)
 		syslog(LOG_INFO, "Closing log file\n");
 		fclose(log_file);
 		log_file = NULL;
+#if (USE_AESD_CHAR_DEVICE == 0U)
 		syslog(LOG_INFO, "Deleting log file\n");
 		unlink(LOG_FILE_NAME);
+#endif
 	}
 }
 

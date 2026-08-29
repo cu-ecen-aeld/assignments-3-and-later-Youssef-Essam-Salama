@@ -57,6 +57,45 @@ static int aesd_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+static loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
+{
+	loff_t retval = 0;
+
+	retval = down_read_killable(&aesd_device.circular_buffer_semaphore);
+	if (0 != retval) {
+		goto fn_return;
+	}
+
+	size_t eof_offset =
+		aesd_circular_buffer_find_EOF_offset(&aesd_device.buffer);
+
+	up_read(&aesd_device.circular_buffer_semaphore);
+
+	switch (whence) {
+	case SEEK_SET:
+		retval = offset;
+		break;
+	case SEEK_CUR:
+		retval = filp->f_pos + offset;
+		break;
+	case SEEK_END:
+		retval = eof_offset + offset;
+		break;
+	default:
+		retval = -EINVAL;
+		goto fn_return;
+	}
+
+	if (retval < 0 || retval > eof_offset) {
+		retval = -ERANGE;
+	} else {
+		filp->f_pos = retval;
+	}
+
+fn_return:
+	return retval;
+}
+
 static ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 			 loff_t *f_pos)
 {
@@ -138,9 +177,9 @@ static ssize_t aesd_write(struct file *filp, const char __user *buf,
 
 	if (NULL == aesd_device.temp_entry.buffptr) {
 		retval = -ENOMEM;
-        kfree(old_temp_entry_buffptr);
-        aesd_device.temp_entry.size = 0;
-        goto memory_allocation_fail;
+		kfree(old_temp_entry_buffptr);
+		aesd_device.temp_entry.size = 0;
+		goto memory_allocation_fail;
 	}
 
 	k_retval = copy_from_user((void *)aesd_device.temp_entry.buffptr +
@@ -167,14 +206,14 @@ static ssize_t aesd_write(struct file *filp, const char __user *buf,
 	returned_entry_buff_ptr = aesd_circular_buffer_add_entry(
 		&aesd_device.buffer, &aesd_device.temp_entry);
 
-    aesd_device.temp_entry.buffptr = NULL;
-    aesd_device.temp_entry.size = 0;
+	kfree(returned_entry_buff_ptr);
 
-    mutex_unlock(&aesd_device.temp_entry_mutex);
-
+	aesd_device.temp_entry.buffptr = NULL;
+	aesd_device.temp_entry.size = 0;
+	
 	up_write(&aesd_device.circular_buffer_semaphore);
 
-	kfree(returned_entry_buff_ptr);
+	mutex_unlock(&aesd_device.temp_entry_mutex);
 
 	retval = count;
 	return retval;
@@ -191,6 +230,7 @@ fn_return:
 
 struct file_operations aesd_fops = {
 	.owner = THIS_MODULE,
+	.llseek = aesd_llseek,
 	.read = aesd_read,
 	.write = aesd_write,
 	.open = aesd_open,
