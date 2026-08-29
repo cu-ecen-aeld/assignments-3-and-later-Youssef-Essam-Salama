@@ -12,7 +12,7 @@
    ############################################################
 */
 #include "aesdsocket_socket.h"
-#include "aesdsocket_common.h"
+#include "aesdsocket_cfg.h"
 
 #include <errno.h>
 #include <netdb.h>

@@ -1,32 +1,30 @@
 CC ?= $(CROSS_COMPILE)gcc
 
-CFLAGS ?= -Wall -Werror -g -pthread -I $(INC_DIR)
+INC_DIRS = ./api ./cfg
+SRC_DIRS = ./src
+OBJ_DIR = ./obj
+OUTPUT_DIR = .
+TARGET = aesdsocket
+
+CFLAGS ?= -Wall -Werror -g -pthread $(addprefix -I,$(INC_DIRS))
 LDFLAGS ?= -pthread
 
-INC_DIR = ./api
-INC_FILES = $(wildcard $(INC_DIR)/*.h)
-
-SRC_DIR = ./src
-SRC_FILES = $(wildcard $(SRC_DIR)/*.c)
-
-OBJ_DIR = ./obj
+INC_FILES = $(wildcard $(INC_DIRS)/*.h)
+SRC_FILES = $(wildcard $(SRC_DIRS)/*.c)
 OBJ_FILES = $(addprefix $(OBJ_DIR)/,$(notdir $(SRC_FILES:.c=.o)))
-
-OUTPUT_DIR = .
-EXECUTABLE = aesdsocket
 
 .PHONY: all clean directories
 
-all: directories $(EXECUTABLE)
+all: directories $(TARGET)
 
 directories:
 	mkdir -p $(OBJ_DIR) $(OUTPUT_DIR)
 
-$(EXECUTABLE): $(OBJ_FILES)
+$(TARGET): $(OBJ_FILES)
 	$(CC) $(LDFLAGS) $^ -o $(OUTPUT_DIR)/$@
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(INC_FILES) | directories
+$(OBJ_DIR)/%.o: $(SRC_DIRS)/%.c $(INC_FILES) | directories
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(OBJ_FILES) $(OUTPUT_DIR)/$(EXECUTABLE)
+	rm -rf $(OBJ_FILES) $(OUTPUT_DIR)/$(TARGET)

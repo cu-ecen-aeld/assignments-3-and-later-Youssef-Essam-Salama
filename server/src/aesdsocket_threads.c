@@ -13,6 +13,7 @@
 */
 #include "aesdsocket_threads.h"
 #include "aesdsocket_client.h"
+#include "aesdsocket_logging.h"
 #include "aesdsocket_socket.h"
 
 #include <errno.h>

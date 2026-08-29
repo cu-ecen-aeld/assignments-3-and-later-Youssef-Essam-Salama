@@ -12,7 +12,9 @@
    ############################################################
 */
 #include "aesdsocket_client.h"
+#include "aesdsocket_cfg.h"
 #include "aesdsocket_common.h"
+#include "aesdsocket_logging.h"
 #include "aesdsocket_socket.h"
 #include "aesdsocket_threads.h"
 
@@ -119,9 +121,15 @@ static uint8_t flush_packet_to_client(int sock_fd, char *packet,
 	uint8_t ret_val = EXIT_SUCCESS;
 
 	pthread_mutex_lock(&log_file_mutex);
+#if (USE_AESD_CHAR_DEVICE == 1U)
+	open_log_file();
+#endif
 	fwrite(packet, 1, packet_len, log_file);
 	fflush(log_file);
 	ret_val = send_file(sock_fd, packet, send_buffer_size);
+#if (USE_AESD_CHAR_DEVICE == 1U)
+	close_log_file();
+#endif
 	pthread_mutex_unlock(&log_file_mutex);
 
 	if (EXIT_SUCCESS != ret_val) {

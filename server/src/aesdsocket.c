@@ -12,7 +12,9 @@
    ############################################################
 */
 #include "aesdsocket.h"
+#include "aesdsocket_cfg.h"
 #include "aesdsocket_common.h"
+#include "aesdsocket_logging.h"
 #include "aesdsocket_socket.h"
 #include "aesdsocket_threads.h"
 
@@ -30,9 +32,7 @@
    ################# Global variables #########################
    ############################################################
 */
-FILE *log_file = NULL;
 volatile sig_atomic_t process_running = TRUE;
-pthread_mutex_t log_file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /*
    ############################################################
@@ -42,7 +42,6 @@ pthread_mutex_t log_file_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void stop_server_process(void);
 static uint8_t handle_input_parameters(int argc, char *argv[]);
 static void sig_int_term_handler(int signum);
-static uint8_t setup_log_file(void);
 static uint8_t setup_signal_handlers(void);
 static uint8_t handle_client_connections(void);
 static uint8_t setup_daemon(void);
@@ -114,19 +113,6 @@ static uint8_t setup_signal_handlers(void)
 	if (0 != sigaction(SIGTERM, &sig_int_term_action, NULL)) {
 		syslog(LOG_ERR, "Error setting up SIGTERM handler: %s\n",
 		       strerror(errno));
-		ret_val = EXIT_FAILURE;
-	}
-
-	return ret_val;
-}
-
-static uint8_t setup_log_file(void)
-{
-	uint8_t ret_val = EXIT_SUCCESS;
-
-	log_file = fopen(LOG_FILE_NAME, "w+");
-	if (log_file == NULL) {
-		syslog(LOG_ERR, "Error opening file: %s\n", strerror(errno));
 		ret_val = EXIT_FAILURE;
 	}
 
@@ -309,9 +295,7 @@ static void free_resources(void)
 	}
 
 	if (log_file != NULL) {
-		syslog(LOG_INFO, "Closing log file\n");
-		fclose(log_file);
-		log_file = NULL;
+		close_log_file();
 #if (USE_AESD_CHAR_DEVICE == 0U)
 		syslog(LOG_INFO, "Deleting log file\n");
 		unlink(LOG_FILE_NAME);
@@ -341,10 +325,12 @@ int main(int argc, char *argv[])
 			break;
 		}
 
-		ret_val = setup_log_file();
+#if (USE_AESD_CHAR_DEVICE == 0U)
+		ret_val = open_log_file();
 		if (EXIT_SUCCESS != ret_val) {
 			break;
 		}
+#endif
 
 		ret_val = handle_run_as_daemon();
 		if (EXIT_SUCCESS != ret_val) {
