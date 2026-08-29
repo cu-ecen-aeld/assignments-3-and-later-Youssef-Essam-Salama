@@ -60,14 +60,14 @@ static int aesd_release(struct inode *inode, struct file *filp)
 static loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
 {
 	loff_t retval = 0;
+	size_t eof_offset = 0;
 
 	retval = down_read_killable(&aesd_device.circular_buffer_semaphore);
 	if (0 != retval) {
 		goto fn_return;
 	}
 
-	size_t eof_offset =
-		aesd_circular_buffer_find_EOF_offset(&aesd_device.buffer);
+	eof_offset = aesd_circular_buffer_find_EOF_offset(&aesd_device.buffer);
 
 	up_read(&aesd_device.circular_buffer_semaphore);
 
@@ -210,7 +210,7 @@ static ssize_t aesd_write(struct file *filp, const char __user *buf,
 
 	aesd_device.temp_entry.buffptr = NULL;
 	aesd_device.temp_entry.size = 0;
-	
+
 	up_write(&aesd_device.circular_buffer_semaphore);
 
 	mutex_unlock(&aesd_device.temp_entry_mutex);

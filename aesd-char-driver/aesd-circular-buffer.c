@@ -36,8 +36,10 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
 {
 	struct aesd_buffer_entry *returned_entry = NULL;
 	struct aesd_buffer_entry *current_entry = NULL;
+	uint8_t index;
 
-	for (uint8_t index = 0; index < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; index++) {
+	for (index = 0; index < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+	     index++) {
 		current_entry =
 			&buffer->entry[(buffer->out_offs + index) %
 				       AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED];
@@ -66,8 +68,10 @@ size_t aesd_circular_buffer_find_EOF_offset(struct aesd_circular_buffer *buffer)
 {
 	size_t eof_offset = 0;
 	struct aesd_buffer_entry *current_entry = NULL;
+	uint8_t index;
 
-	for (uint8_t index = 0; index < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; index++) {
+	for (index = 0; index < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+	     index++) {
 		current_entry =
 			&buffer->entry[(buffer->out_offs + index) %
 				       AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED];
