@@ -16,6 +16,18 @@
 
 #include "aesd-circular-buffer.h"
 
+static struct aesd_buffer_entry *
+aesd_circular_buffer_get_entry_by_offset(struct aesd_circular_buffer *buffer,
+					 size_t entry_offset)
+{
+	struct aesd_buffer_entry *entry = NULL;
+	if ((entry_offset < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)) {
+		entry = &buffer->entry[(buffer->out_offs + entry_offset) %
+				       AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED];
+	}
+	return entry;
+}
+
 /**
  * @param buffer the buffer to search for corresponding offset.  Any necessary
  * locking must be performed by caller.
@@ -41,8 +53,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(
 	for (index = 0; index < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 	     index++) {
 		current_entry =
-			&buffer->entry[(buffer->out_offs + index) %
-				       AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED];
+			aesd_circular_buffer_get_entry_by_offset(buffer, index);
 		if (current_entry->buffptr == NULL) {
 			/* Reached the end of the buffer */
 			break;
@@ -73,8 +84,7 @@ size_t aesd_circular_buffer_find_EOF_offset(struct aesd_circular_buffer *buffer)
 	for (index = 0; index < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 	     index++) {
 		current_entry =
-			&buffer->entry[(buffer->out_offs + index) %
-				       AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED];
+			aesd_circular_buffer_get_entry_by_offset(buffer, index);
 		if (current_entry->buffptr == NULL) {
 			/* Reached the end of the buffer */
 			break;
@@ -85,6 +95,51 @@ size_t aesd_circular_buffer_find_EOF_offset(struct aesd_circular_buffer *buffer)
 	}
 
 	return eof_offset;
+}
+
+/**
+ * @param buffer the buffer to search for corresponding offset.  Any necessary
+ * locking must be performed by caller.
+ * @param entry_offset the position to search for in the buffer list, describing
+ * the offset of the entry to search for.
+ * @param char_offset the position to search for in the buffer list, describing
+ * the zero referenced character index if all buffer strings were concatenated
+ * end to end
+ * @return the absolute offset of the position described by entry_offset and
+ * char_offset, or -1 if this position is not available in the buffer (not
+ * enough data is written).
+ */
+loff_t
+aesd_circular_buffer_find_absolute_offset(struct aesd_circular_buffer *buffer,
+					  size_t entry_offset,
+					  size_t char_offset)
+{
+	loff_t absolute_offset;
+	struct aesd_buffer_entry *current_entry;
+	uint8_t index;
+
+	do {
+		current_entry = aesd_circular_buffer_get_entry_by_offset(
+			buffer, entry_offset);
+
+		if ((current_entry == NULL) ||
+		    (current_entry->buffptr == NULL) ||
+		    (char_offset >= current_entry->size)) {
+			absolute_offset = -1;
+			break;
+		}
+
+		absolute_offset = char_offset;
+
+		for (index = 0; index < entry_offset; index++) {
+			current_entry =
+				aesd_circular_buffer_get_entry_by_offset(buffer,
+									 index);
+			absolute_offset += current_entry->size;
+		}
+
+	} while (0);
+	return absolute_offset;
 }
 
 /**

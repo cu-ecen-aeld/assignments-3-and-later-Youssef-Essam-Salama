@@ -11,6 +11,7 @@
  *
  */
 
+#include "aesd_ioctl.h"
 #include "aesdchar.h"
 #include <linux/fs.h> // file_operations
 #include <linux/init.h>
@@ -90,6 +91,50 @@ static loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
 		retval = -ERANGE;
 	} else {
 		filp->f_pos = retval;
+	}
+
+fn_return:
+	return retval;
+}
+
+static long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	long retval;
+	unsigned long k_retval;
+	struct aesd_seekto seekto;
+	loff_t absolute_offset;
+
+	switch (cmd) {
+	case AESDCHAR_IOCSEEKTO:
+		k_retval = copy_from_user((void *)&seekto, (void *)arg,
+					  sizeof(struct aesd_seekto));
+		if (0 != k_retval) {
+			retval = -EFAULT;
+			goto fn_return;
+		}
+
+		retval = down_read_killable(
+			&aesd_device.circular_buffer_semaphore);
+		if (0 != retval) {
+			goto fn_return;
+		}
+
+		absolute_offset = aesd_circular_buffer_find_absolute_offset(
+			&aesd_device.buffer, seekto.write_cmd,
+			seekto.write_cmd_offset);
+
+		up_read(&aesd_device.circular_buffer_semaphore);
+
+		if (absolute_offset < 0) {
+			retval = -EINVAL;
+			goto fn_return;
+		}
+
+		retval = aesd_llseek(filp, absolute_offset, SEEK_SET);
+		break;
+	default:
+		retval = -ENOTTY;
+		break;
 	}
 
 fn_return:
@@ -231,6 +276,7 @@ fn_return:
 struct file_operations aesd_fops = {
 	.owner = THIS_MODULE,
 	.llseek = aesd_llseek,
+	.unlocked_ioctl = aesd_ioctl,
 	.read = aesd_read,
 	.write = aesd_write,
 	.open = aesd_open,
