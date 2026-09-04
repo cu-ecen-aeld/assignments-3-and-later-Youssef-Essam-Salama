@@ -6,7 +6,7 @@ OBJ_DIR = ./obj
 OUTPUT_DIR = .
 TARGET = aesdsocket
 
-CFLAGS ?= -Wall -Werror -g -pthread $(addprefix -I,$(INC_DIRS))
+CFLAGS ?= -Wall -Werror -g -pthread $(addprefix -I,$(INC_DIRS)) -I../aesd-char-driver
 LDFLAGS ?= -pthread
 
 INC_FILES = $(wildcard $(INC_DIRS)/*.h)

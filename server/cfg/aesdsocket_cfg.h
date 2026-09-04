@@ -19,5 +19,7 @@
 #define LOG_FILE_NAME "/var/tmp/aesdsocketdata"
 #endif
 
+#define SEEKTO_PACKET_PREFIX "AESDCHAR_IOCSEEKTO:"
+#define SEEKTO_PACKET_PREFIX_LENGTH (sizeof(SEEKTO_PACKET_PREFIX) - 1U)
 
 #endif /* AESDSOCKET_CFG_H */
