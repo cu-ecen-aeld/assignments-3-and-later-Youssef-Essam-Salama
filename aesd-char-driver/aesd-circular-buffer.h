@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stddef.h> // size_t
 #include <stdint.h> // uintx_t
+typedef long long loff_t; // For compatibility with kernel types
 #endif
 
 #define FALSE ((bool)0u)
